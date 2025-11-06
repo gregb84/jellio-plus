@@ -20,6 +20,22 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Frontend Dependencies
+        run: npm ci
+        working-directory: jellio-web
+
+      - name: Build Frontend Single-File
+        run: npm run build
+        working-directory: jellio-web
+
+      - name: Copy Frontend Bundle to Plugin Web
+        run: cp jellio-web/dist/index.html Jellyfin.Plugin.Jellio/Web/index.html
+
       - name: Extract Release Version Number
         id: version
         run: |

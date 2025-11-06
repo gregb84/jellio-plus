@@ -24,6 +24,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Web\config.html" />
     <EmbeddedResource Include="Web\redirect.html" />
+    <EmbeddedResource Include="Web\index.html" />
   </ItemGroup>
 
 </Project>

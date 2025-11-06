@@ -1,4 +1,5 @@
 using System.Net.Mime;
+using System.Reflection;
 using Jellyfin.Plugin.Jellio.Helpers;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Dto;
@@ -16,6 +17,7 @@ public class WebController : ControllerBase
     private readonly IUserViewManager _userViewManager;
     private readonly IDtoService _dtoService;
     private readonly IServerApplicationHost _serverApplicationHost;
+    private readonly Assembly _executingAssembly = Assembly.GetExecutingAssembly();
 
     public WebController(
         IUserManager userManager,
@@ -28,6 +30,23 @@ public class WebController : ControllerBase
         _userViewManager = userViewManager;
         _dtoService = dtoService;
         _serverApplicationHost = serverApplicationHost;
+    }
+
+    [HttpGet]
+    [HttpGet("configure")]
+    [HttpGet("{config?}/configure")]
+    public IActionResult GetIndex(string? config = null)
+    {
+        const string ResourceName = "Jellyfin.Plugin.Jellio.Web.index.html";
+
+        var resourceStream = _executingAssembly.GetManifestResourceStream(ResourceName);
+
+        if (resourceStream == null)
+        {
+            return NotFound($"Resource {ResourceName} not found.");
+        }
+
+        return new FileStreamResult(resourceStream, "text/html");
     }
 
     [HttpGet("server-info")]
