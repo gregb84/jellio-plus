@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Json;
 using System.Net.Mime;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -30,19 +31,21 @@ public class AddonController : ControllerBase
     private readonly IUserViewManager _userViewManager;
     private readonly IDtoService _dtoService;
     private readonly ILibraryManager _libraryManager;
+    private readonly IHttpClientFactory _httpClientFactory;
     private static readonly HttpClient _httpClient = new();
 
     public AddonController(
         IUserManager userManager,
         IUserViewManager userViewManager,
         IDtoService dtoService,
-        ILibraryManager libraryManager
-    )
+        ILibraryManager libraryManager,
+        IHttpClientFactory httpClientFactory)
     {
         _userManager = userManager;
         _userViewManager = userViewManager;
         _dtoService = dtoService;
         _libraryManager = libraryManager;
+        _httpClientFactory = httpClientFactory;
     }
 
     private async Task<string?> GetTitleFromCinemeta(string imdbId, string type)
@@ -145,7 +148,7 @@ public class AddonController : ControllerBase
             return Ok(new { streams = Array.Empty<object>() });
         }
 
-    var baseUrl = GetBaseUrl();
+        var baseUrl = GetBaseUrl();
         var dtoOptions = new DtoOptions(true);
         var dtos = _dtoService.GetBaseItemDtos(items, dtoOptions, user);
         var streams = dtos.SelectMany(dto =>
@@ -282,7 +285,7 @@ public class AddonController : ControllerBase
         };
         var result = folder.GetItems(query);
         var dtos = _dtoService.GetBaseItemDtos(result.Items, dtoOptions, user);
-    var baseUrl = GetBaseUrl();
+        var baseUrl = GetBaseUrl();
         var metas = dtos.Select(dto => MapToMeta(dto, stremioType, baseUrl));
 
         return Ok(new { metas });
@@ -387,17 +390,33 @@ public class AddonController : ControllerBase
 
         if (items.Count == 0)
         {
-            // No local stream found; provide a Jellyseerr request stream if configured
+            // AUTO-REQUEST: Automatically send request to Jellyseerr if configured
             if (config.JellyseerrEnabled && !string.IsNullOrWhiteSpace(config.JellyseerrUrl))
             {
                 var title = await GetTitleFromCinemeta(imdbId, "movie");
                 if (!string.IsNullOrWhiteSpace(title))
                 {
-                    var baseUrl = GetBaseUrl(config.PublicBaseUrl);
-                    var requestUrl = $"{baseUrl}/jellio/{Request.RouteValues["config"]}/jellyseerr?type=movie&imdbId=tt{imdbId}&title={Uri.EscapeDataString(title)}";
+                    // Send request in background
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await AutoRequestToJellyseerr(config, userId, "movie", imdbId, title, null, null);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Jellio] Auto-request failed: {ex.Message}");
+                        }
+                    });
+
+                    // Return a notification stream
                     var streams = new[]
                     {
-                        new { url = requestUrl, name = "📥 Request via Jellyseerr", description = "Click to send request to Jellyseerr" }
+                        new {
+                            url = "about:blank",
+                            name = "📥 Auto-requested via Jellyseerr",
+                            description = $"{title} has been automatically requested. Check Jellyseerr for status."
+                        }
                     };
                     return Ok(new { streams });
                 }
@@ -434,17 +453,32 @@ public class AddonController : ControllerBase
 
         if (seriesItems.Count == 0)
         {
-            // Series not found - show Jellyseerr option if enabled
+            // AUTO-REQUEST: Series not found - auto-request if enabled
             if (config.JellyseerrEnabled && !string.IsNullOrWhiteSpace(config.JellyseerrUrl))
             {
                 var title = await GetTitleFromCinemeta(imdbId, "tv");
                 if (!string.IsNullOrWhiteSpace(title))
                 {
-                    var baseUrl = GetBaseUrl(config.PublicBaseUrl);
-                    var requestUrl = $"{baseUrl}/jellio/{Request.RouteValues["config"]}/jellyseerr?type=tv&imdbId=tt{imdbId}&title={Uri.EscapeDataString(title)}&season={seasonNum}&episode={episodeNum}";
+                    // Send request in background
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await AutoRequestToJellyseerr(config, userId, "tv", imdbId, title, seasonNum, episodeNum);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Jellio] Auto-request failed: {ex.Message}");
+                        }
+                    });
+
                     var streams = new[]
                     {
-                        new { url = requestUrl, name = "📥 Request via Jellyseerr", description = "Click to send request to Jellyseerr" }
+                        new {
+                            url = "about:blank",
+                            name = "📥 Auto-requested via Jellyseerr",
+                            description = $"{title} S{seasonNum}E{episodeNum} has been automatically requested. Check Jellyseerr for status."
+                        }
                     };
                     return Ok(new { streams });
                 }
@@ -466,17 +500,32 @@ public class AddonController : ControllerBase
 
         if (episodeItems.Count == 0)
         {
-            // Episode not found - show Jellyseerr option if enabled
+            // AUTO-REQUEST: Episode not found - auto-request if enabled
             if (config.JellyseerrEnabled && !string.IsNullOrWhiteSpace(config.JellyseerrUrl))
             {
                 var title = await GetTitleFromCinemeta(imdbId, "tv");
                 if (!string.IsNullOrWhiteSpace(title))
                 {
-                    var baseUrl = GetBaseUrl(config.PublicBaseUrl);
-                    var requestUrl = $"{baseUrl}/jellio/{Request.RouteValues["config"]}/jellyseerr?type=tv&imdbId=tt{imdbId}&title={Uri.EscapeDataString(title)}&season={seasonNum}&episode={episodeNum}";
+                    // Send request in background
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await AutoRequestToJellyseerr(config, userId, "tv", imdbId, title, seasonNum, episodeNum);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Jellio] Auto-request failed: {ex.Message}");
+                        }
+                    });
+
                     var streams = new[]
                     {
-                        new { url = requestUrl, name = "📥 Request via Jellyseerr", description = "Click to send request to Jellyseerr" }
+                        new {
+                            url = "about:blank",
+                            name = "📥 Auto-requested via Jellyseerr",
+                            description = $"{title} S{seasonNum}E{episodeNum} has been automatically requested. Check Jellyseerr for status."
+                        }
                     };
                     return Ok(new { streams });
                 }
@@ -486,5 +535,108 @@ public class AddonController : ControllerBase
         }
 
         return GetStreamsResult(userId, episodeItems);
+    }
+
+    // AUTO-REQUEST HELPER METHOD
+    private async Task AutoRequestToJellyseerr(
+        ConfigModel config,
+        Guid userId,
+        string type,
+        string imdbId,
+        string title,
+        int? season,
+        int? episode)
+    {
+        Console.WriteLine($"[Jellio] Auto-requesting: {title} ({type}) - IMDB: tt{imdbId}");
+
+        using var client = _httpClientFactory.CreateClient();
+        client.BaseAddress = new Uri(config.JellyseerrUrl!.TrimEnd('/') + "/");
+        client.Timeout = TimeSpan.FromSeconds(10);
+
+        if (!string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
+        {
+            client.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
+        }
+
+        try
+        {
+            // Search for TMDB ID
+            var searchUri = $"api/v1/search?query={Uri.EscapeDataString(title)}";
+            using var searchResp = await client.GetAsync(searchUri);
+
+            int? tmdbId = null;
+
+            if (searchResp.IsSuccessStatusCode)
+            {
+                using var doc = JsonDocument.Parse(await searchResp.Content.ReadAsStreamAsync());
+                if (doc.RootElement.TryGetProperty("results", out var results))
+                {
+                    foreach (var el in results.EnumerateArray())
+                    {
+                        var mediaType = el.TryGetProperty("mediaType", out var mt) ? mt.GetString() : null;
+                        if (string.Equals(mediaType, type, StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (el.TryGetProperty("id", out var idEl) && idEl.TryGetInt32(out var idVal))
+                            {
+                                tmdbId = idVal;
+                                Console.WriteLine($"[Jellio] Found TMDB ID: {idVal}");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!tmdbId.HasValue)
+            {
+                Console.WriteLine($"[Jellio] Could not find TMDB ID for {title}");
+                return;
+            }
+
+            // Build request body
+            object body;
+            if (type == "tv" && season.HasValue)
+            {
+                body = new
+                {
+                    mediaType = "tv",
+                    mediaId = tmdbId.Value,
+                    seasons = new[] { season.Value }
+                };
+            }
+            else if (type == "tv")
+            {
+                body = new
+                {
+                    mediaType = "tv",
+                    mediaId = tmdbId.Value
+                };
+            }
+            else
+            {
+                body = new
+                {
+                    mediaType = "movie",
+                    mediaId = tmdbId.Value
+                };
+            }
+
+            // Send request
+            using var requestResp = await client.PostAsJsonAsync("api/v1/request", body);
+
+            if (requestResp.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"[Jellio] ✓ Auto-request successful for {title}");
+            }
+            else
+            {
+                var errorContent = await requestResp.Content.ReadAsStringAsync();
+                Console.WriteLine($"[Jellio] Auto-request failed: {errorContent}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Jellio] Exception during auto-request: {ex.Message}");
+        }
     }
 }
