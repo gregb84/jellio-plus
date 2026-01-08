@@ -1,4 +1,5 @@
-jellyseerr autoadd on if no content
+jellyseerr autoadd on if no content.
+added support for strm files will show url from strm file in stremio so not going though jellyfin server.
 
 ### Installation:
 
