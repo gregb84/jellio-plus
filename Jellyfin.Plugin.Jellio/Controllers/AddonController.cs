@@ -133,31 +133,44 @@ public class AddonController : ControllerBase
         bool includeDetails = false
     )
     {
-        string? imdbId = null;
-        if (dto.ProviderIds.TryGetValue("Imdb", out var id))
+        string? releaseInfo = null;
+        if (dto.PremiereDate.HasValue)
         {
-            imdbId = id;
+            var premiereYear = dto.PremiereDate.Value.Year.ToString(CultureInfo.InvariantCulture);
+            releaseInfo = premiereYear;
+            if (stremioType == StremioType.Series)
+            {
+                releaseInfo += "-";
+                if (dto.Status != "Continuing" && dto.EndDate.HasValue)
+                {
+                    var endYear = dto.EndDate.Value.Year.ToString(CultureInfo.InvariantCulture);
+                    if (premiereYear != endYear)
+                    {
+                        releaseInfo += endYear;
+                    }
+                }
+            }
         }
 
         var meta = new MetaDto
         {
-            Id = $"jellio:{dto.Id}",
-            Type = stremioType,
-            Name = dto.Name ?? "Unknown",
-            Poster = dto.ImageTags.ContainsKey(ImageType.Primary)
-                ? $"{baseUrl}/Items/{dto.Id}/Images/Primary"
-                : null,
-            ImdbId = imdbId,
+            Id = dto.ProviderIds.TryGetValue("Imdb", out var idVal) ? idVal : $"jellio:{dto.Id}",
+            Type = stremioType.ToString().ToLower(CultureInfo.InvariantCulture),
+            Name = dto.Name,
+            Poster = $"{baseUrl}/Items/{dto.Id}/Images/Primary",
+            PosterShape = "poster",
+            Genres = dto.Genres,
+            Description = dto.Overview,
+            ImdbRating = dto.CommunityRating?.ToString("F1", CultureInfo.InvariantCulture),
+            ReleaseInfo = releaseInfo,
         };
 
         if (includeDetails)
         {
-            meta.Description = dto.Overview;
-            meta.ReleaseInfo = dto.ProductionYear?.ToString(CultureInfo.InvariantCulture);
-            meta.Genres = dto.Genres;
-            meta.Runtime = dto.RunTimeTicks.HasValue
-                ? $"{dto.RunTimeTicks.Value / 600000000} min"
-                : null;
+            meta.Runtime =
+                dto.RunTimeTicks.HasValue && dto.RunTimeTicks.Value != 0
+                    ? $"{dto.RunTimeTicks.Value / 600000000} min"
+                    : null;
             meta.Logo = dto.ImageTags.ContainsKey(ImageType.Logo)
                 ? $"{baseUrl}/Items/{dto.Id}/Images/Logo"
                 : null;
@@ -220,72 +233,125 @@ public class AddonController : ControllerBase
     {
         var userId = (Guid)HttpContext.Items["JellioUserId"]!;
 
-        var libraries = config.LibrariesGuids.Select(guid =>
-                _libraryManager.GetItemById(guid, userId)
-            )
-            .Where(item => item != null)
-            .ToList();
-
-        var catalogs = libraries.Select(lib => new CatalogDto
+        var userLibraries = LibraryHelper.GetUserLibraries(userId, _userManager, _userViewManager, _dtoService);
+        userLibraries = Array.FindAll(userLibraries, l => config.LibrariesGuids.Contains(l.Id));
+        if (userLibraries.Length != config.LibrariesGuids.Count)
         {
-            Id = $"jellio_{lib!.InternalId}",
-            Name = $"{lib.Name} | {config.ServerName}",
-            Type = lib.GetBaseItemKind() is BaseItemKind.CollectionFolder collectionFolder &&
-                   collectionFolder == BaseItemKind.CollectionFolder
-                ? StremioType.Movie
-                : StremioType.Series,
+            return NotFound();
+        }
+
+        var catalogs = userLibraries.Select(lib =>
+        {
+            return new
+            {
+                type = lib.CollectionType switch
+                {
+                    CollectionType.movies => "movie",
+                    CollectionType.tvshows => "series",
+                    _ => null,
+                },
+                id = lib.Id.ToString(),
+                name = $"{lib.Name} | {config.ServerName}",
+                extra = new[]
+                {
+                    new { name = "skip", isRequired = false },
+                    new { name = "search", isRequired = false },
+                },
+            };
         });
 
-        return Ok(
-            new
+        var catalogNames = userLibraries.Select(l => l.Name).ToList();
+        var descriptionText = $"Play movies and series from {config.ServerName}: {string.Join(", ", catalogNames)}";
+        var manifest = new
+        {
+            id = "com.stremio.jellio",
+            version = "0.0.1",
+            name = "Jellio",
+            description = descriptionText,
+            resources = new object[]
             {
-                id = "jellio.stream",
-                version = "1.0.0",
-                name = "Jellio",
-                description = "Stream your Jellyfin library in Stremio",
-                resources = new[] { "catalog", "meta", "stream" },
-                types = new[] { "movie", "series" },
-                catalogs,
-                idPrefixes = new[] { "jellio", "tt" },
-            }
-        );
+                "catalog",
+                "stream",
+                new
+                {
+                    name = "meta",
+                    types = new[] { "movie", "series" },
+                    idPrefixes = new[] { "jellio" },
+                },
+            },
+            types = new[] { "movie", "series" },
+            idPrefixes = new[] { "tt", "jellio" },
+            contactEmail = "support@jellio.stream",
+            behaviorHints = new { configurable = true },
+            catalogs,
+        };
+
+        return Ok(manifest);
     }
 
-    [HttpGet("catalog/{stremioType}/jellio_{libraryId}.json")]
+    [HttpGet("catalog/{stremioType}/{catalogId:guid}/{extra}.json")]
+    [HttpGet("catalog/{stremioType}/{catalogId:guid}.json")]
     public IActionResult GetCatalog(
         [ConfigFromBase64Json] ConfigModel config,
         StremioType stremioType,
-        long libraryId
+        Guid catalogId,
+        string? extra = null
     )
     {
         var userId = (Guid)HttpContext.Items["JellioUserId"]!;
-        var baseUrl = GetBaseUrl();
-        var user = _userManager.GetUserById(userId);
 
+        var userLibraries = LibraryHelper.GetUserLibraries(userId, _userManager, _userViewManager, _dtoService);
+        var catalogLibrary = Array.Find(userLibraries, l => l.Id == catalogId);
+        if (catalogLibrary == null)
+        {
+            return NotFound();
+        }
+
+        var item = _libraryManager.GetParentItem(catalogLibrary.Id, userId);
+        if (item is not Folder folder)
+        {
+            folder = _libraryManager.GetUserRootFolder();
+        }
+
+        var extras =
+            extra
+                ?.Split('&')
+                .Select(e => e.Split('='))
+                .Where(parts => parts.Length == 2)
+                .ToDictionary(parts => parts[0], parts => parts[1])
+            ?? new Dictionary<string, string>();
+
+        int startIndex =
+            extras.TryGetValue("skip", out var skipValue)
+            && int.TryParse(skipValue, out var parsedSkip)
+                ? parsedSkip
+                : 0;
+        extras.TryGetValue("search", out var searchTerm);
+
+        var dtoOptions = new DtoOptions
+        {
+            Fields = [ItemFields.ProviderIds, ItemFields.Overview, ItemFields.Genres],
+        };
+
+        var user = _userManager.GetUserById(userId);
         if (user == null)
         {
             return Unauthorized();
         }
 
-        var library = _libraryManager.GetItemById(libraryId);
-        if (library == null)
-        {
-            return NotFound();
-        }
-
         var query = new InternalItemsQuery(user)
         {
-            Parent = library,
-            IncludeItemTypes = stremioType is StremioType.Movie
-                ? [BaseItemKind.Movie]
-                : [BaseItemKind.Series],
-            Recursive = true,
-            OrderBy = [(ItemSortBy.DateCreated, SortOrder.Descending)],
+            Recursive = true, // need this for search to work
+            IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Series],
+            Limit = 100,
+            StartIndex = startIndex,
+            SearchTerm = searchTerm,
+            ParentId = catalogLibrary.Id,
+            DtoOptions = dtoOptions,
         };
-        var items = _libraryManager.GetItemList(query);
-
-        var dtoOptions = new DtoOptions(false);
-        var dtos = _dtoService.GetBaseItemDtos(items, dtoOptions, user);
+        var result = folder.GetItems(query);
+        var dtos = _dtoService.GetBaseItemDtos(result.Items, dtoOptions, user);
+        var baseUrl = GetBaseUrl();
         var metas = dtos.Select(dto => MapToMeta(dto, stremioType, baseUrl));
 
         return Ok(new { metas });
