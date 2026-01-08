@@ -84,6 +84,48 @@ public class AddonController : ControllerBase
     }
 
     /// <summary>
+    /// Checks if a URL is accessible by making a HEAD request
+    /// </summary>
+    /// <param name="url">The URL to check</param>
+    /// <returns>True if the URL is accessible, false otherwise</returns>
+    private async Task<bool> IsUrlAccessibleAsync(string url)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Head, url);
+            request.Headers.Add("User-Agent", "Jellio/1.0");
+            
+            // Set a short timeout for the check (5 seconds)
+            using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var response = await _httpClient.SendAsync(request, cts.Token);
+            
+            // Consider 2xx and 3xx status codes as accessible
+            var isAccessible = (int)response.StatusCode >= 200 && (int)response.StatusCode < 400;
+            
+            if (isAccessible)
+            {
+                Console.WriteLine($"[Jellio] STRM URL is accessible: {url} (Status: {response.StatusCode})");
+            }
+            else
+            {
+                Console.WriteLine($"[Jellio] STRM URL returned error status: {url} (Status: {response.StatusCode})");
+            }
+            
+            return isAccessible;
+        }
+        catch (TaskCanceledException)
+        {
+            Console.WriteLine($"[Jellio] STRM URL check timeout: {url}");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Jellio] STRM URL check failed: {url} - {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Checks if a file is a STRM file and reads the URL from it
     /// </summary>
     /// <param name="filePath">Path to the file to check</param>
@@ -197,7 +239,7 @@ public class AddonController : ControllerBase
         return meta;
     }
 
-    private OkObjectResult GetStreamsResult(Guid userId, IReadOnlyList<BaseItem> items)
+    private async Task<OkObjectResult> GetStreamsResultAsync(Guid userId, IReadOnlyList<BaseItem> items)
     {
         var user = _userManager.GetUserById(userId);
         if (user == null)
@@ -237,14 +279,26 @@ public class AddonController : ControllerBase
                 
                 if (!string.IsNullOrWhiteSpace(strmUrl))
                 {
-                    // This is a STRM file - use the URL from inside the file
-                    Console.WriteLine($"[Jellio] STRM detected: {filePath} -> {strmUrl}");
-                    streams.Add(new StreamDto
+                    // Validate that the STRM URL is accessible
+                    var isAccessible = await IsUrlAccessibleAsync(strmUrl);
+                    
+                    if (isAccessible)
                     {
-                        Url = strmUrl,
-                        Name = "Jellio (STRM)",
-                        Description = source.Name ?? "STRM Source",
-                    });
+                        // STRM URL is valid and accessible - use it
+                        Console.WriteLine($"[Jellio] Using validated STRM URL: {filePath} -> {strmUrl}");
+                        streams.Add(new StreamDto
+                        {
+                            Url = strmUrl,
+                            Name = "Jellio (STRM)",
+                            Description = source.Name ?? "STRM Source",
+                        });
+                    }
+                    else
+                    {
+                        // STRM URL is not accessible - skip it entirely
+                        // Jellyfin can't stream it either since it's just a dead link
+                        Console.WriteLine($"[Jellio] Skipping inaccessible STRM URL: {strmUrl}");
+                    }
                 }
                 else
                 {
@@ -450,7 +504,7 @@ public class AddonController : ControllerBase
     }
 
     [HttpGet("stream/{stremioType}/jellio:{mediaId:guid}.json")]
-    public IActionResult GetStream(
+    public async Task<IActionResult> GetStream(
         [ConfigFromBase64Json] ConfigModel config,
         StremioType stremioType,
         Guid mediaId
@@ -466,7 +520,7 @@ public class AddonController : ControllerBase
             return Ok(new { streams = Array.Empty<object>() });
         }
 
-        return GetStreamsResult(userId, [item]);
+        return await GetStreamsResultAsync(userId, [item]);
     }
 
     [HttpGet("stream/movie/tt{imdbId}.json")]
@@ -527,7 +581,7 @@ public class AddonController : ControllerBase
             return Ok(new { streams = Array.Empty<object>() });
         }
 
-        return GetStreamsResult(userId, items);
+        return await GetStreamsResultAsync(userId, items);
     }
 
     [HttpGet("stream/series/tt{imdbId}:{seasonNum:int}:{episodeNum:int}.json")]
@@ -608,7 +662,7 @@ public class AddonController : ControllerBase
             return Ok(new { streams = Array.Empty<object>() });
         }
 
-        return GetStreamsResult(userId, episodeItems);
+        return await GetStreamsResultAsync(userId, episodeItems);
     }
 
     // AUTO-REQUEST HELPER METHOD
