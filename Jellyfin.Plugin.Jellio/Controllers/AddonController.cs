@@ -101,20 +101,33 @@ public class AddonController : ControllerBase
             return null;
         }
 
+        Console.WriteLine($"[Jellio] STRM file detected, attempting to read: {filePath}");
+
         try
         {
-            // Read the first line of the STRM file which contains the URL
-            if (System.IO.File.Exists(filePath))
+            // Check if file exists
+            if (!System.IO.File.Exists(filePath))
             {
-                var url = System.IO.File.ReadAllText(filePath).Trim();
-                
-                // Basic validation that it's a URL
-                if (!string.IsNullOrWhiteSpace(url) && 
-                    (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || 
-                     url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
-                {
-                    return url;
-                }
+                Console.WriteLine($"[Jellio] STRM file not found: {filePath}");
+                return null;
+            }
+
+            // Read the first line of the STRM file which contains the URL
+            var url = System.IO.File.ReadAllText(filePath).Trim();
+            
+            Console.WriteLine($"[Jellio] STRM file content: {url}");
+            
+            // Basic validation that it's a URL
+            if (!string.IsNullOrWhiteSpace(url) && 
+                (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || 
+                 url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+            {
+                Console.WriteLine($"[Jellio] Valid STRM URL found: {url}");
+                return url;
+            }
+            else
+            {
+                Console.WriteLine($"[Jellio] Invalid URL format in STRM file: {url}");
             }
         }
         catch (Exception ex)
@@ -196,34 +209,55 @@ public class AddonController : ControllerBase
         var dtoOptions = new DtoOptions(true);
         var dtos = _dtoService.GetBaseItemDtos(items, dtoOptions, user);
         
-        var streams = dtos.SelectMany(dto =>
-            dto.MediaSources.Select(source =>
+        var streams = new List<StreamDto>();
+        
+        for (int i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            var dto = dtos[i];
+            
+            foreach (var source in dto.MediaSources)
             {
+                // Try to get the actual file path from the BaseItem
+                string? filePath = null;
+                
+                // BaseItem.Path contains the actual file path
+                if (item != null && !string.IsNullOrEmpty(item.Path))
+                {
+                    filePath = item.Path;
+                }
+                // Fallback to MediaSource.Path if available
+                else if (!string.IsNullOrEmpty(source.Path))
+                {
+                    filePath = source.Path;
+                }
+                
                 // Check if this is a STRM file and try to read the URL from it
-                var strmUrl = ReadStrmUrl(source.Path);
+                var strmUrl = ReadStrmUrl(filePath);
                 
                 if (!string.IsNullOrWhiteSpace(strmUrl))
                 {
                     // This is a STRM file - use the URL from inside the file
-                    return new StreamDto
+                    Console.WriteLine($"[Jellio] STRM detected: {filePath} -> {strmUrl}");
+                    streams.Add(new StreamDto
                     {
                         Url = strmUrl,
                         Name = "Jellio (STRM)",
                         Description = source.Name ?? "STRM Source",
-                    };
+                    });
                 }
                 else
                 {
                     // Normal file - use Jellyfin streaming endpoint
-                    return new StreamDto
+                    streams.Add(new StreamDto
                     {
                         Url = $"{baseUrl}/videos/{dto.Id}/stream?mediaSourceId={source.Id}&static=true",
                         Name = "Jellio",
                         Description = source.Name,
-                    };
+                    });
                 }
-            })
-        );
+            }
+        }
         
         return Ok(new { streams });
     }
