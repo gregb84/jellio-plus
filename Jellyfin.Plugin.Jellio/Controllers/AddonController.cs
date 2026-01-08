@@ -235,7 +235,9 @@ public class AddonController : ControllerBase
 
         var userLibraries = LibraryHelper.GetUserLibraries(userId, _userManager, _userViewManager, _dtoService);
         userLibraries = Array.FindAll(userLibraries, l => config.LibrariesGuids.Contains(l.Id));
-        if (userLibraries.Length != config.LibrariesGuids.Count)
+        
+        // If no libraries found at all, return NotFound
+        if (userLibraries.Length == 0)
         {
             return NotFound();
         }
