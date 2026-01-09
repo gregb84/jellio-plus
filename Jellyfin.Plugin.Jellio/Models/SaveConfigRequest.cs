@@ -6,4 +6,5 @@ public class SaveConfigRequest
     public string? JellyseerrUrl { get; set; }
     public string? JellyseerrApiKey { get; set; }
     public string? PublicBaseUrl { get; set; }
+    public bool DirectDownloadOnly { get; set; }
 }
