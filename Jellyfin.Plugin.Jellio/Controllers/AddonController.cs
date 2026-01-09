@@ -150,10 +150,10 @@ public class AddonController : ControllerBase
     {
         try
         {
-            if (!File.Exists(filePath))
+            if (!System.IO.File.Exists(filePath))
                 return null;
 
-            var content = await File.ReadAllTextAsync(filePath);
+            var content = await System.IO.File.ReadAllTextAsync(filePath);
             var url = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
             
             return string.IsNullOrWhiteSpace(url) ? null : url.Trim();
@@ -186,11 +186,11 @@ public class AddonController : ControllerBase
             foreach (var source in dto.MediaSources)
             {
                 string? filePath = null;
-                if (source.Path != null && File.Exists(source.Path))
+                if (source.Path != null && System.IO.File.Exists(source.Path))
                 {
                     filePath = source.Path;
                 }
-                else if (item.Path != null && File.Exists(item.Path))
+                else if (item.Path != null && System.IO.File.Exists(item.Path))
                 {
                     filePath = item.Path;
                 }
@@ -306,7 +306,7 @@ public class AddonController : ControllerBase
             idPrefixes = new[] { "tt", "jellio" },
             contactEmail = "support@jellio.stream",
             behaviorHints = new { configurable = true },
-            catalogs, // This will be an empty array if no libraries selected
+            catalogs,
         };
 
         return Ok(manifest);
@@ -614,7 +614,7 @@ public class AddonController : ControllerBase
             var requestBody = new
             {
                 mediaType = type,
-                mediaId = int.Parse(imdbId.Replace("tt", "")),
+                mediaId = int.Parse(imdbId.Replace("tt", ""), CultureInfo.InvariantCulture),
                 tvdbId = (int?)null,
                 seasons = type == "tv" && season.HasValue ? new[] { season.Value } : null
             };
