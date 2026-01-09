@@ -10,6 +10,7 @@ interface StoredConfig {
   jellyseerrUrl?: string;
   jellyseerrApiKey?: string;
   publicBaseUrl?: string;
+  directDownloadOnly?: boolean;
 }
 
 export const useConfigStorage = (form: UseFormReturn<any>, accessToken?: string) => {
@@ -38,6 +39,9 @@ export const useConfigStorage = (form: UseFormReturn<any>, accessToken?: string)
           if (config.publicBaseUrl) {
             form.setValue('publicBaseUrl', config.publicBaseUrl);
           }
+          if (config.directDownloadOnly !== undefined) {
+            form.setValue('directDownloadOnly', config.directDownloadOnly);
+          }
         }
 
         // Then try server config (may override localStorage)
@@ -55,6 +59,9 @@ export const useConfigStorage = (form: UseFormReturn<any>, accessToken?: string)
             }
             if (serverConfig.publicBaseUrl) {
               form.setValue('publicBaseUrl', serverConfig.publicBaseUrl);
+            }
+            if (serverConfig.directDownloadOnly !== undefined) {
+              form.setValue('directDownloadOnly', serverConfig.directDownloadOnly);
             }
           }
         }
@@ -80,6 +87,7 @@ export const useConfigStorage = (form: UseFormReturn<any>, accessToken?: string)
         jellyseerrUrl: stripTrailingSlash(values.jellyseerrUrl),
         jellyseerrApiKey: values.jellyseerrApiKey,
         publicBaseUrl: stripTrailingSlash(values.publicBaseUrl),
+        directDownloadOnly: values.directDownloadOnly,
       };
       
       localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
