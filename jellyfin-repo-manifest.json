@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "1.0.9.0",
+                "changelog": "",
+                "targetAbi": "10.11.0.0",
+                "sourceUrl": "https://github.com/gregb84/jellio-plus/releases/download/v1.0.9/jellio_1.0.9.0.zip",
+                "checksum": "e3062e6e6b348bb3003d219cc2292369",
+                "timestamp": "2026-01-09T16:40:09Z"
+            },
+            {
                 "version": "1.0.8.0",
                 "changelog": "",
                 "targetAbi": "10.11.0.0",
