@@ -37,7 +37,7 @@ const ConfigForm: FC<Props> = ({ serverInfo }) => {
       jellyseerrUrl: '',
       jellyseerrApiKey: '',
       publicBaseUrl: '',
-    directDownloadOnly: false,
+      directDownloadOnly: false,
     },
   });
 
@@ -67,6 +67,7 @@ const ConfigForm: FC<Props> = ({ serverInfo }) => {
           jellyseerrUrl: stripTrailingSlash(values.jellyseerrUrl ?? ''),
           jellyseerrApiKey: values.jellyseerrApiKey ?? '',
           publicBaseUrl: stripTrailingSlash(values.publicBaseUrl ?? ''),
+          directDownloadOnly: values.directDownloadOnly ?? false,
         },
         serverInfo.accessToken,
       );
@@ -98,16 +99,24 @@ const ConfigForm: FC<Props> = ({ serverInfo }) => {
       ),
       ServerName: serverInfo.serverName,
     };
+    
     if (values.jellyseerrEnabled && values.jellyseerrUrl) {
       configuration.JellyseerrEnabled = true;
       configuration.JellyseerrUrl = stripTrailingSlash(values.jellyseerrUrl);
       if (values.jellyseerrApiKey) configuration.JellyseerrApiKey = values.jellyseerrApiKey;
     }
+    
     if (values.publicBaseUrl) {
       configuration.PublicBaseUrl = stripTrailingSlash(values.publicBaseUrl);
     }
+    
+    if (values.directDownloadOnly) {
+      configuration.DirectDownloadOnly = true;
+    }
+    
     const encodedConfiguration = encode(JSON.stringify(configuration), true);
     const addonUrl = `${getBaseUrl()}/${encodedConfiguration}/manifest.json`;
+    
     if (action === 'clipboard') {
       navigator.clipboard.writeText(addonUrl);
       setCopied(true);
