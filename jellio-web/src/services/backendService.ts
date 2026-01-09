@@ -16,7 +16,7 @@ export const getServerInfo = async (
 
     const response = await axios.get(`${getBaseUrl()}/server-info`, {
       headers,
-      withCredentials: true, // Include cookies for Jellyfin session auth
+      withCredentials: true,
     });
 
     return {
@@ -108,4 +108,3 @@ export const getConfigFromServer = async (
     throw error;
   }
 };
-
