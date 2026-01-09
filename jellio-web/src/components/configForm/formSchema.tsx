@@ -13,6 +13,7 @@ export const formSchema = z.object({
   jellyseerrUrl: z.string().url().or(z.literal('')).default(''),
   jellyseerrApiKey: z.string().default(''),
   publicBaseUrl: z.string().url().or(z.literal('')).default(''),
+  directDownloadOnly: z.boolean().default(false),
 });
 
 export type ConfigFormType = z.infer<typeof formSchema>;
