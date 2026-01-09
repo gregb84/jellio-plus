@@ -59,6 +59,7 @@ export interface SaveConfigData {
   jellyseerrUrl?: string;
   jellyseerrApiKey?: string;
   publicBaseUrl?: string;
+  directDownloadOnly?: boolean;
 }
 
 export const saveConfigToServer = async (
