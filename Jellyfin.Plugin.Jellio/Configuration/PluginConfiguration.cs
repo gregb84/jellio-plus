@@ -8,4 +8,5 @@ public class PluginConfiguration : BasePluginConfiguration
     public string JellyseerrUrl { get; set; } = string.Empty;
     public string JellyseerrApiKey { get; set; } = string.Empty;
     public string PublicBaseUrl { get; set; } = string.Empty;
+    public bool DirectDownloadOnly { get; set; } = false;
 }
