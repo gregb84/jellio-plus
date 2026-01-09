@@ -18,7 +18,7 @@ public class ConfigModel
     // Optional: public base URL to build links (e.g., https://jellyfin.example.com)
     // Useful when Jellyfin runs behind a reverse proxy / tunnel and Request.Scheme is http
     public string? PublicBaseUrl { get; init; }
-
+    
     // Stream options
     public bool DirectDownloadOnly { get; init; } = false;
 }
