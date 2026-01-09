@@ -73,143 +73,32 @@ public class AddonController : ControllerBase
         return null;
     }
 
-    private string GetBaseUrl(string? overrideBaseUrl = null)
+    private string GetBaseUrl(string? publicBaseUrl = null)
     {
-        if (!string.IsNullOrWhiteSpace(overrideBaseUrl))
+        if (!string.IsNullOrWhiteSpace(publicBaseUrl))
         {
-            return overrideBaseUrl!.TrimEnd('/');
+            return publicBaseUrl.TrimEnd('/');
         }
 
-        return $"{Request.Scheme}://{Request.Host}{Request.PathBase}";
+        var request = HttpContext.Request;
+        var scheme = request.Scheme;
+        var host = request.Host.ToUriComponent();
+        return $"{scheme}://{host}";
     }
 
-    /// <summary>
-    /// Checks if a URL is accessible by making a HEAD request
-    /// </summary>
-    /// <param name="url">The URL to check</param>
-    /// <returns>True if the URL is accessible, false otherwise</returns>
-    private async Task<bool> IsUrlAccessibleAsync(string url)
+    private MetaDto MapToMeta(BaseItemDto dto, StremioType stremioType, string baseUrl, bool includeDetails = false)
     {
-        try
+        var releaseInfo = dto.ProductionYear?.ToString(CultureInfo.InvariantCulture);
+        if (!dto.ProviderIds.TryGetValue("Imdb", out var imdbId))
         {
-            using var request = new HttpRequestMessage(HttpMethod.Head, url);
-            request.Headers.Add("User-Agent", "Jellio/1.0");
-            
-            // Set a short timeout for the check (5 seconds)
-            using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5));
-            var response = await _httpClient.SendAsync(request, cts.Token);
-            
-            // Consider 2xx and 3xx status codes as accessible
-            var isAccessible = (int)response.StatusCode >= 200 && (int)response.StatusCode < 400;
-            
-            if (isAccessible)
-            {
-                Console.WriteLine($"[Jellio] STRM URL is accessible: {url} (Status: {response.StatusCode})");
-            }
-            else
-            {
-                Console.WriteLine($"[Jellio] STRM URL returned error status: {url} (Status: {response.StatusCode})");
-            }
-            
-            return isAccessible;
-        }
-        catch (TaskCanceledException)
-        {
-            Console.WriteLine($"[Jellio] STRM URL check timeout: {url}");
-            return false;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[Jellio] STRM URL check failed: {url} - {ex.Message}");
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Checks if a file is a STRM file and reads the URL from it
-    /// </summary>
-    /// <param name="filePath">Path to the file to check</param>
-    /// <returns>The URL from the STRM file, or null if not a STRM file or error occurs</returns>
-    private string? ReadStrmUrl(string? filePath)
-    {
-        if (string.IsNullOrWhiteSpace(filePath))
-        {
-            return null;
+            imdbId = null;
         }
 
-        // Check if file has .strm extension
-        if (!filePath.EndsWith(".strm", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        Console.WriteLine($"[Jellio] STRM file detected, attempting to read: {filePath}");
-
-        try
-        {
-            // Check if file exists
-            if (!System.IO.File.Exists(filePath))
-            {
-                Console.WriteLine($"[Jellio] STRM file not found: {filePath}");
-                return null;
-            }
-
-            // Read the first line of the STRM file which contains the URL
-            var url = System.IO.File.ReadAllText(filePath).Trim();
-            
-            Console.WriteLine($"[Jellio] STRM file content: {url}");
-            
-            // Basic validation that it's a URL
-            if (!string.IsNullOrWhiteSpace(url) && 
-                (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || 
-                 url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
-            {
-                Console.WriteLine($"[Jellio] Valid STRM URL found: {url}");
-                return url;
-            }
-            else
-            {
-                Console.WriteLine($"[Jellio] Invalid URL format in STRM file: {url}");
-            }
-        }
-        catch (Exception ex)
-        {
-            // Log the error but don't throw - fall back to normal streaming
-            Console.WriteLine($"[Jellio] Error reading STRM file {filePath}: {ex.Message}");
-        }
-
-        return null;
-    }
-
-    private static MetaDto MapToMeta(
-        BaseItemDto dto,
-        StremioType stremioType,
-        string baseUrl,
-        bool includeDetails = false
-    )
-    {
-        string? releaseInfo = null;
-        if (dto.PremiereDate.HasValue)
-        {
-            var premiereYear = dto.PremiereDate.Value.Year.ToString(CultureInfo.InvariantCulture);
-            releaseInfo = premiereYear;
-            if (stremioType == StremioType.Series)
-            {
-                releaseInfo += "-";
-                if (dto.Status != "Continuing" && dto.EndDate.HasValue)
-                {
-                    var endYear = dto.EndDate.Value.Year.ToString(CultureInfo.InvariantCulture);
-                    if (premiereYear != endYear)
-                    {
-                        releaseInfo += endYear;
-                    }
-                }
-            }
-        }
-
+        var idVal = !string.IsNullOrEmpty(imdbId) ? imdbId : $"jellio:{dto.Id}";
         var meta = new MetaDto
         {
-            Id = dto.ProviderIds.TryGetValue("Imdb", out var idVal) ? idVal : $"jellio:{dto.Id}",
+            Id = !string.IsNullOrEmpty(imdbId) && imdbId.StartsWith("tt", StringComparison.Ordinal)
+                ? imdbId : $"jellio:{dto.Id}",
             Type = stremioType.ToString().ToLower(CultureInfo.InvariantCulture),
             Name = dto.Name,
             Poster = $"{baseUrl}/Items/{dto.Id}/Images/Primary",
@@ -239,6 +128,42 @@ public class AddonController : ControllerBase
         return meta;
     }
 
+    private async Task<bool> IsUrlAccessibleAsync(string url)
+    {
+        try
+        {
+            using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var request = new HttpRequestMessage(HttpMethod.Head, url);
+            var response = await _httpClient.SendAsync(request, cts.Token);
+            
+            return response.IsSuccessStatusCode || 
+                   response.StatusCode == System.Net.HttpStatusCode.Redirect ||
+                   response.StatusCode == System.Net.HttpStatusCode.MovedPermanently;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task<string?> ReadStrmUrlAsync(string filePath)
+    {
+        try
+        {
+            if (!File.Exists(filePath))
+                return null;
+
+            var content = await File.ReadAllTextAsync(filePath);
+            var url = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            
+            return string.IsNullOrWhiteSpace(url) ? null : url.Trim();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private async Task<OkObjectResult> GetStreamsResultAsync(Guid userId, IReadOnlyList<BaseItem> items, string authToken, bool directDownloadOnly = false)
     {
         var user = _userManager.GetUserById(userId);
@@ -260,37 +185,28 @@ public class AddonController : ControllerBase
             
             foreach (var source in dto.MediaSources)
             {
-                // Try to get the actual file path from the BaseItem
                 string? filePath = null;
-                
-                // BaseItem.Path contains the actual file path
-                if (item != null && !string.IsNullOrEmpty(item.Path))
-                {
-                    filePath = item.Path;
-                }
-                // Fallback to MediaSource.Path if available
-                else if (!string.IsNullOrEmpty(source.Path))
+                if (source.Path != null && File.Exists(source.Path))
                 {
                     filePath = source.Path;
                 }
-                
-                // Check if this is a STRM file and try to read the URL from it
-                var strmUrl = ReadStrmUrl(filePath);
-                
-                if (!string.IsNullOrWhiteSpace(strmUrl))
+                else if (item.Path != null && File.Exists(item.Path))
                 {
-                    // Validate that the STRM URL is accessible
-                    var isAccessible = await IsUrlAccessibleAsync(strmUrl);
-                    
-                    if (isAccessible)
+                    filePath = item.Path;
+                }
+
+                bool isStrm = filePath != null && filePath.EndsWith(".strm", StringComparison.OrdinalIgnoreCase);
+                
+                if (isStrm)
+                {
+                    var strmUrl = await ReadStrmUrlAsync(filePath!);
+                    if (!string.IsNullOrWhiteSpace(strmUrl) && await IsUrlAccessibleAsync(strmUrl))
                     {
-                        // STRM URL is valid and accessible - use it
-                        Console.WriteLine($"[Jellio] Using validated STRM URL: {filePath} -> {strmUrl}");
                         streams.Add(new StreamDto
                         {
                             Url = strmUrl,
-                            Name = "Jellio (STRM)",
-                            Description = source.Name ?? "STRM Source",
+                            Name = directDownloadOnly ? "Jellio" : "STRM Source",
+                            Description = directDownloadOnly ? source.Name : $"{source.Name} - STRM Source",
                             BehaviorHints = new BehaviorHints
                             {
                                 NotWebReady = true
@@ -299,18 +215,13 @@ public class AddonController : ControllerBase
                     }
                     else
                     {
-                        // STRM URL is not accessible - skip it entirely
-                        // Jellyfin can't stream it either since it's just a dead link
                         Console.WriteLine($"[Jellio] Skipping inaccessible STRM URL: {strmUrl}");
                     }
                 }
                 else
                 {
-                    // Normal file - provide streaming and/or direct download based on config
-                    
                     if (!directDownloadOnly)
                     {
-                        // Option 1: Streaming (transcoded if needed)
                         streams.Add(new StreamDto
                         {
                             Url = $"{baseUrl}/videos/{dto.Id}/stream?mediaSourceId={source.Id}&static=true&api_key={authToken}",
@@ -323,7 +234,6 @@ public class AddonController : ControllerBase
                         });
                     }
                     
-                    // Option 2: Direct Download (original file, no transcoding)
                     streams.Add(new StreamDto
                     {
                         Url = $"{baseUrl}/Items/{dto.Id}/Download?mediaSourceId={source.Id}&api_key={authToken}",
@@ -349,12 +259,7 @@ public class AddonController : ControllerBase
         var userLibraries = LibraryHelper.GetUserLibraries(userId, _userManager, _userViewManager, _dtoService);
         userLibraries = Array.FindAll(userLibraries, l => config.LibrariesGuids.Contains(l.Id));
         
-        // If no libraries found at all, return NotFound
-        if (userLibraries.Length == 0)
-        {
-            return NotFound();
-        }
-
+        // Build catalogs only if libraries are selected
         var catalogs = userLibraries.Select(lib =>
         {
             return new
@@ -373,10 +278,13 @@ public class AddonController : ControllerBase
                     new { name = "search", isRequired = false },
                 },
             };
-        });
+        }).ToArray();
 
-        var catalogNames = userLibraries.Select(l => l.Name).ToList();
-        var descriptionText = $"Play movies and series from {config.ServerName}: {string.Join(", ", catalogNames)}";
+        // Description based on whether catalogs are present
+        var descriptionText = catalogs.Length > 0
+            ? $"Play movies and series from {config.ServerName}: {string.Join(", ", userLibraries.Select(l => l.Name))}"
+            : $"Search and play movies and series from {config.ServerName}";
+
         var manifest = new
         {
             id = "com.stremio.jellio",
@@ -398,7 +306,7 @@ public class AddonController : ControllerBase
             idPrefixes = new[] { "tt", "jellio" },
             contactEmail = "support@jellio.stream",
             behaviorHints = new { configurable = true },
-            catalogs,
+            catalogs, // This will be an empty array if no libraries selected
         };
 
         return Ok(manifest);
@@ -456,7 +364,7 @@ public class AddonController : ControllerBase
 
         var query = new InternalItemsQuery(user)
         {
-            Recursive = true, // need this for search to work
+            Recursive = true,
             IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Series],
             Limit = 100,
             StartIndex = startIndex,
@@ -540,8 +448,6 @@ public class AddonController : ControllerBase
         var item = _libraryManager.GetItemById<BaseItem>(mediaId, userId);
         if (item == null)
         {
-            // If the item isn't in the library, we can't resolve provider IDs here.
-            // Let Stremio fall back to IMDB-based stream routes which include IDs for request flow.
             return Ok(new { streams = Array.Empty<object>() });
         }
 
@@ -571,13 +477,11 @@ public class AddonController : ControllerBase
 
         if (items.Count == 0)
         {
-            // AUTO-REQUEST: Automatically send request to Jellyseerr if configured
             if (config.JellyseerrEnabled && !string.IsNullOrWhiteSpace(config.JellyseerrUrl))
             {
                 var title = await GetTitleFromCinemeta(imdbId, "movie");
                 if (!string.IsNullOrWhiteSpace(title))
                 {
-                    // Send request in background
                     _ = Task.Run(async () =>
                     {
                         try
@@ -590,7 +494,6 @@ public class AddonController : ControllerBase
                         }
                     });
 
-                    // Return a notification stream
                     var streams = new[]
                     {
                         new {
@@ -634,13 +537,11 @@ public class AddonController : ControllerBase
 
         if (seriesItems.Count == 0)
         {
-            // AUTO-REQUEST: Series not found - auto-request if enabled
             if (config.JellyseerrEnabled && !string.IsNullOrWhiteSpace(config.JellyseerrUrl))
             {
                 var title = await GetTitleFromCinemeta(imdbId, "tv");
                 if (!string.IsNullOrWhiteSpace(title))
                 {
-                    // Send request in background
                     _ = Task.Run(async () =>
                     {
                         try
@@ -690,7 +591,6 @@ public class AddonController : ControllerBase
         return await GetStreamsResultAsync(userId, episodeItems, config.AuthToken, config.DirectDownloadOnly);
     }
 
-    // AUTO-REQUEST HELPER METHOD
     private async Task AutoRequestToJellyseerr(
         ConfigModel config,
         Guid userId,
@@ -700,74 +600,46 @@ public class AddonController : ControllerBase
         int? season,
         int? episode)
     {
-        Console.WriteLine($"[Jellio] Auto-requesting: {title} ({type}) - IMDB: tt{imdbId}");
-
-        using var client = _httpClientFactory.CreateClient();
-        client.BaseAddress = new Uri(config.JellyseerrUrl!.TrimEnd('/') + "/");
-        client.Timeout = TimeSpan.FromSeconds(10);
-
-        if (!string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
+        if (string.IsNullOrWhiteSpace(config.JellyseerrUrl) || 
+            string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
         {
-            client.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
+            return;
         }
 
         try
         {
-            // Search for TMDB ID
-            var searchUri = $"api/v1/search?query={Uri.EscapeDataString(title)}";
-            using var searchResp = await client.GetAsync(searchUri);
-
-            int? tmdbId = null;
-
-            if (searchResp.IsSuccessStatusCode)
-            {
-                using var doc = JsonDocument.Parse(await searchResp.Content.ReadAsStreamAsync());
-                if (doc.RootElement.TryGetProperty("results", out var results))
-                {
-                    foreach (var el in results.EnumerateArray())
-                    {
-                        var mediaType = el.TryGetProperty("mediaType", out var mt) ? mt.GetString() : null;
-                        if (mediaType == type)
-                        {
-                            tmdbId = el.TryGetProperty("id", out var idProp) ? idProp.GetInt32() : (int?)null;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (!tmdbId.HasValue)
-            {
-                Console.WriteLine($"[Jellio] Could not find TMDB ID for {title}");
-                return;
-            }
-
-            // Make request
-            var requestUri = "api/v1/request";
+            var client = _httpClientFactory.CreateClient();
+            var baseUrl = config.JellyseerrUrl.TrimEnd('/');
+            
             var requestBody = new
             {
                 mediaType = type,
-                mediaId = tmdbId.Value,
-                seasons = type == "tv" && season.HasValue ? new[] { season.Value } : null,
+                mediaId = int.Parse(imdbId.Replace("tt", "")),
+                tvdbId = (int?)null,
+                seasons = type == "tv" && season.HasValue ? new[] { season.Value } : null
             };
 
-            var jsonContent = JsonContent.Create(requestBody);
-            using var requestResp = await client.PostAsync(requestUri, jsonContent);
-
-            if (requestResp.IsSuccessStatusCode)
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/api/v1/request")
             {
-                Console.WriteLine($"[Jellio] Successfully requested {title} in Jellyseerr");
+                Content = JsonContent.Create(requestBody)
+            };
+            
+            request.Headers.Add("X-Api-Key", config.JellyseerrApiKey);
+            
+            var response = await client.SendAsync(request);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"[Jellio] Successfully requested {title} via Jellyseerr");
             }
             else
             {
-                var errorBody = await requestResp.Content.ReadAsStringAsync();
-                Console.WriteLine($"[Jellio] Jellyseerr request failed: {requestResp.StatusCode} - {errorBody}");
+                Console.WriteLine($"[Jellio] Jellyseerr request failed: {response.StatusCode}");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Jellio] Jellyseerr auto-request error: {ex.Message}");
-            throw;
+            Console.WriteLine($"[Jellio] Error sending request to Jellyseerr: {ex.Message}");
         }
     }
 }
