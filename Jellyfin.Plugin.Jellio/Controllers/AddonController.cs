@@ -291,6 +291,7 @@ public class AddonController : ControllerBase
                             Url = strmUrl,
                             Name = "Jellio (STRM)",
                             Description = source.Name ?? "STRM Source",
+                            NotWebReady = true,
                         });
                     }
                     else
@@ -302,12 +303,24 @@ public class AddonController : ControllerBase
                 }
                 else
                 {
-                    // Normal file - use Jellyfin streaming endpoint
+                    // Normal file - provide both streaming and direct download options
+                    
+                    // Option 1: Streaming (transcoded if needed)
                     streams.Add(new StreamDto
                     {
                         Url = $"{baseUrl}/videos/{dto.Id}/stream?mediaSourceId={source.Id}&static=true",
                         Name = "Jellio",
                         Description = source.Name,
+                        NotWebReady = true,
+                    });
+                    
+                    // Option 2: Direct Download (original file, no transcoding)
+                    streams.Add(new StreamDto
+                    {
+                        Url = $"{baseUrl}/Items/{dto.Id}/Download?mediaSourceId={source.Id}",
+                        Name = "Jellio (Direct)",
+                        Description = $"{source.Name} - Direct Download",
+                        NotWebReady = true,
                     });
                 }
             }
