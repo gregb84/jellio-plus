@@ -239,7 +239,7 @@ public class AddonController : ControllerBase
         return meta;
     }
 
-    private async Task<OkObjectResult> GetStreamsResultAsync(Guid userId, IReadOnlyList<BaseItem> items)
+    private async Task<OkObjectResult> GetStreamsResultAsync(Guid userId, IReadOnlyList<BaseItem> items, string authToken)
     {
         var user = _userManager.GetUserById(userId);
         if (user == null)
@@ -308,7 +308,7 @@ public class AddonController : ControllerBase
                     // Option 1: Streaming (transcoded if needed)
                     streams.Add(new StreamDto
                     {
-                        Url = $"{baseUrl}/videos/{dto.Id}/stream?mediaSourceId={source.Id}&static=true",
+                        Url = $"{baseUrl}/videos/{dto.Id}/stream?mediaSourceId={source.Id}&static=true&api_key={authToken}",
                         Name = "Jellio",
                         Description = source.Name,
                         NotWebReady = true,
@@ -317,7 +317,7 @@ public class AddonController : ControllerBase
                     // Option 2: Direct Download (original file, no transcoding)
                     streams.Add(new StreamDto
                     {
-                        Url = $"{baseUrl}/Items/{dto.Id}/Download?mediaSourceId={source.Id}",
+                        Url = $"{baseUrl}/Items/{dto.Id}/Download?mediaSourceId={source.Id}&api_key={authToken}",
                         Name = "Jellio (Direct)",
                         Description = $"{source.Name} - Direct Download",
                         NotWebReady = true,
@@ -533,7 +533,7 @@ public class AddonController : ControllerBase
             return Ok(new { streams = Array.Empty<object>() });
         }
 
-        return await GetStreamsResultAsync(userId, [item]);
+        return await GetStreamsResultAsync(userId, [item], config.AuthToken);
     }
 
     [HttpGet("stream/movie/tt{imdbId}.json")]
@@ -594,7 +594,7 @@ public class AddonController : ControllerBase
             return Ok(new { streams = Array.Empty<object>() });
         }
 
-        return await GetStreamsResultAsync(userId, items);
+        return await GetStreamsResultAsync(userId, items, config.AuthToken);
     }
 
     [HttpGet("stream/series/tt{imdbId}:{seasonNum:int}:{episodeNum:int}.json")]
@@ -675,7 +675,7 @@ public class AddonController : ControllerBase
             return Ok(new { streams = Array.Empty<object>() });
         }
 
-        return await GetStreamsResultAsync(userId, episodeItems);
+        return await GetStreamsResultAsync(userId, episodeItems, config.AuthToken);
     }
 
     // AUTO-REQUEST HELPER METHOD
