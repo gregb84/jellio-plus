@@ -1,4 +1,4 @@
-auto-adds to jellyseerr if no content.\n
+auto-adds to jellyseerr if no content.
 added support for strm files will show url from strm file in stremio so not going though jellyfin server.
 added basic test to url in strm file if dead will not show in stremio.
 added direct media download no transcoding option.
