@@ -205,8 +205,8 @@ public class AddonController : ControllerBase
                         streams.Add(new StreamDto
                         {
                             Url = strmUrl,
-                            Name = directDownloadOnly ? "Jellio" : "STRM Source",
-                            Description = directDownloadOnly ? source.Name : $"{source.Name} - STRM Source",
+                            Name = "Jellio (STRM)",
+                            Description = $"{source.Name} - STRM Source",
                             BehaviorHints = new BehaviorHints
                             {
                                 NotWebReady = true
@@ -237,8 +237,8 @@ public class AddonController : ControllerBase
                     streams.Add(new StreamDto
                     {
                         Url = $"{baseUrl}/Items/{dto.Id}/Download?mediaSourceId={source.Id}&api_key={authToken}",
-                        Name = directDownloadOnly ? "Jellio" : "Jellio (Direct)",
-                        Description = directDownloadOnly ? source.Name : $"{source.Name} - Direct Download",
+                        Name = "Jellio (Direct)",
+                        Description = $"{source.Name} - Direct Download",
                         BehaviorHints = new BehaviorHints
                         {
                             NotWebReady = true
