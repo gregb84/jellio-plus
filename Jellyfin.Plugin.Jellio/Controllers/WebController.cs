@@ -7,10 +7,11 @@ using MediaBrowser.Controller;
 using MediaBrowser.Controller.Devices;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Model.Dto; // BaseItemDto
+using MediaBrowser.Model.Dto;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+
 namespace Jellyfin.Plugin.Jellio.Controllers;
 
 [ApiController]
@@ -76,7 +77,6 @@ public class WebController : ControllerBase
 
         if (userId == null || userId == Guid.Empty)
         {
-            // LOG: No valid userId found in GetServerInfo (unauthorized request)
             return Unauthorized();
         }
 
@@ -88,22 +88,18 @@ public class WebController : ControllerBase
         }
         catch (ArgumentException)
         {
-            // LOG: Invalid userId (ArgumentException) in GetServerInfo
             return BadRequest(new { error = "Invalid user id." });
         }
         catch (Exception)
         {
-            // LOG: Unexpected error in library enumeration in GetServerInfo
             return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Internal server error." });
         }
 
         if (libraries == null || libraries.Length == 0)
         {
-            // LOG: No libraries found for user in GetServerInfo
             return NotFound(new { error = "No libraries found for user." });
         }
 
-        // LOG: Successfully returned libraries for user in GetServerInfo
         return Ok(new { name = friendlyName, libraries });
     }
 
@@ -136,7 +132,8 @@ public class WebController : ControllerBase
                 jellyseerrEnabled = false,
                 jellyseerrUrl = string.Empty,
                 jellyseerrApiKey = string.Empty,
-                publicBaseUrl = string.Empty
+                publicBaseUrl = string.Empty,
+                directDownloadOnly = false
             });
         }
 
@@ -145,7 +142,8 @@ public class WebController : ControllerBase
             jellyseerrEnabled = config.JellyseerrEnabled,
             jellyseerrUrl = config.JellyseerrUrl,
             jellyseerrApiKey = config.JellyseerrApiKey,
-            publicBaseUrl = config.PublicBaseUrl
+            publicBaseUrl = config.PublicBaseUrl,
+            directDownloadOnly = config.DirectDownloadOnly
         });
     }
 
@@ -180,6 +178,7 @@ public class WebController : ControllerBase
         config.JellyseerrUrl = request.JellyseerrUrl ?? string.Empty;
         config.JellyseerrApiKey = request.JellyseerrApiKey ?? string.Empty;
         config.PublicBaseUrl = request.PublicBaseUrl ?? string.Empty;
+        config.DirectDownloadOnly = request.DirectDownloadOnly;
 
         Plugin.Instance.SaveConfiguration();
 
@@ -220,9 +219,6 @@ public class WebController : ControllerBase
 
     private static string? ParseTokenFromMediaBrowserHeader(string headerValue)
     {
-        // Expect formats like:
-        // MediaBrowser Token="..."
-        // MediaBrowser Client="...", Device="...", DeviceId="...", Version="...", Token="..."
         if (string.IsNullOrWhiteSpace(headerValue))
         {
             return null;
@@ -240,7 +236,6 @@ public class WebController : ControllerBase
             return null;
         }
 
-        // Split by commas, then by =, strip quotes
         var segments = paramPart.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         foreach (var seg in segments)
         {
@@ -258,7 +253,6 @@ public class WebController : ControllerBase
             }
         }
 
-        // Handle single-key format: Token="..." only (no comma)
         if (paramPart.StartsWith("Token=", StringComparison.OrdinalIgnoreCase))
         {
             return paramPart.Substring(6).Trim().Trim('"');
