@@ -239,7 +239,7 @@ public class AddonController : ControllerBase
         return meta;
     }
 
-    private async Task<OkObjectResult> GetStreamsResultAsync(Guid userId, IReadOnlyList<BaseItem> items, string authToken)
+    private async Task<OkObjectResult> GetStreamsResultAsync(Guid userId, IReadOnlyList<BaseItem> items, string authToken, bool directDownloadOnly = false)
     {
         var user = _userManager.GetUserById(userId);
         if (user == null)
@@ -291,7 +291,10 @@ public class AddonController : ControllerBase
                             Url = strmUrl,
                             Name = "Jellio (STRM)",
                             Description = source.Name ?? "STRM Source",
-                            NotWebReady = true,
+                            BehaviorHints = new BehaviorHints
+                            {
+                                NotWebReady = true
+                            }
                         });
                     }
                     else
@@ -303,24 +306,33 @@ public class AddonController : ControllerBase
                 }
                 else
                 {
-                    // Normal file - provide both streaming and direct download options
+                    // Normal file - provide streaming and/or direct download based on config
                     
-                    // Option 1: Streaming (transcoded if needed)
-                    streams.Add(new StreamDto
+                    if (!directDownloadOnly)
                     {
-                        Url = $"{baseUrl}/videos/{dto.Id}/stream?mediaSourceId={source.Id}&static=true&api_key={authToken}",
-                        Name = "Jellio",
-                        Description = source.Name,
-                        NotWebReady = true,
-                    });
+                        // Option 1: Streaming (transcoded if needed)
+                        streams.Add(new StreamDto
+                        {
+                            Url = $"{baseUrl}/videos/{dto.Id}/stream?mediaSourceId={source.Id}&static=true&api_key={authToken}",
+                            Name = "Jellio",
+                            Description = source.Name,
+                            BehaviorHints = new BehaviorHints
+                            {
+                                NotWebReady = true
+                            }
+                        });
+                    }
                     
                     // Option 2: Direct Download (original file, no transcoding)
                     streams.Add(new StreamDto
                     {
                         Url = $"{baseUrl}/Items/{dto.Id}/Download?mediaSourceId={source.Id}&api_key={authToken}",
-                        Name = "Jellio (Direct)",
-                        Description = $"{source.Name} - Direct Download",
-                        NotWebReady = true,
+                        Name = directDownloadOnly ? "Jellio" : "Jellio (Direct)",
+                        Description = directDownloadOnly ? source.Name : $"{source.Name} - Direct Download",
+                        BehaviorHints = new BehaviorHints
+                        {
+                            NotWebReady = true
+                        }
                     });
                 }
             }
@@ -533,7 +545,7 @@ public class AddonController : ControllerBase
             return Ok(new { streams = Array.Empty<object>() });
         }
 
-        return await GetStreamsResultAsync(userId, [item], config.AuthToken);
+        return await GetStreamsResultAsync(userId, [item], config.AuthToken, config.DirectDownloadOnly);
     }
 
     [HttpGet("stream/movie/tt{imdbId}.json")]
@@ -594,7 +606,7 @@ public class AddonController : ControllerBase
             return Ok(new { streams = Array.Empty<object>() });
         }
 
-        return await GetStreamsResultAsync(userId, items, config.AuthToken);
+        return await GetStreamsResultAsync(userId, items, config.AuthToken, config.DirectDownloadOnly);
     }
 
     [HttpGet("stream/series/tt{imdbId}:{seasonNum:int}:{episodeNum:int}.json")]
@@ -675,7 +687,7 @@ public class AddonController : ControllerBase
             return Ok(new { streams = Array.Empty<object>() });
         }
 
-        return await GetStreamsResultAsync(userId, episodeItems, config.AuthToken);
+        return await GetStreamsResultAsync(userId, episodeItems, config.AuthToken, config.DirectDownloadOnly);
     }
 
     // AUTO-REQUEST HELPER METHOD
