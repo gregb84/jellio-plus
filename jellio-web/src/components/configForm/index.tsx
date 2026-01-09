@@ -37,6 +37,7 @@ const ConfigForm: FC<Props> = ({ serverInfo }) => {
       jellyseerrUrl: '',
       jellyseerrApiKey: '',
       publicBaseUrl: '',
+    directDownloadOnly: false,
     },
   });
 
