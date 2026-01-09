@@ -12,4 +12,8 @@ public class StreamDto
 
     [JsonPropertyName("description")]
     public required string Description { get; set; }
+
+    [JsonPropertyName("notWebReady")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool NotWebReady { get; set; }
 }
